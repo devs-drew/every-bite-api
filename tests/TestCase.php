@@ -3,8 +3,16 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Cache;
 
 abstract class TestCase extends BaseTestCase
 {
-    //
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The array cache persists across tests in one process; flush it so
+        // rate-limiter (throttle) counters don't leak between test methods.
+        Cache::flush();
+    }
 }

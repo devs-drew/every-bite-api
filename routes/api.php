@@ -5,9 +5,13 @@ use App\Http\Controllers\CustomFoodController;
 use App\Http\Controllers\FoodLogController;
 use Illuminate\Support\Facades\Route;
 
-// Public auth
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+// Public auth — throttled to blunt brute-force / enumeration (5 req/min per IP).
+Route::middleware('throttle:5,1')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     // Auth + profile

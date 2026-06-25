@@ -90,14 +90,16 @@ class FoodLogController extends Controller
 
         // ponytail: no server-side zero-fill; WeeklyChart maps by date.
         // Zero-fill here only if the chart shows gaps.
+        // Select the real `logged_date` column (not an alias) so its date:Y-m-d cast
+        // applies — keeps the row Carbon-typed across both SQLite and Postgres drivers.
         return $request->user()->foodLogs()
             ->whereBetween('logged_date', [$data['from'], $data['to']])
-            ->selectRaw('logged_date as date, sum(calories) as calories')
+            ->selectRaw('logged_date, sum(calories) as calories')
             ->groupBy('logged_date')
             ->orderBy('logged_date')
             ->get()
             ->map(fn ($row) => [
-                'date' => $row->date->format('Y-m-d'),
+                'date' => $row->logged_date->format('Y-m-d'),
                 'calories' => (int) $row->calories,
             ]);
     }
