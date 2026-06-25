@@ -12,6 +12,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class CustomFood extends Model
 {
+    // Eloquent's inflector singularizes "CustomFood" to "custom_food"; pin the real table.
+    protected $table = 'custom_foods';
+
     protected function casts(): array
     {
         return [
