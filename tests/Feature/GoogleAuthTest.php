@@ -18,10 +18,11 @@ class GoogleAuthTest extends TestCase
     ): void {
         Http::fake([
             'oauth2.googleapis.com/tokeninfo*' => Http::response([
-                'email' => $email,
-                'name'  => $name,
-                'aud'   => $aud ?? config('services.google.client_id'),
-                'sub'   => '112233445566',
+                'email'          => $email,
+                'name'           => $name,
+                'aud'            => $aud ?? config('services.google.client_id'),
+                'sub'            => '112233445566',
+                'email_verified' => 'true',
             ], 200),
         ]);
     }
@@ -86,5 +87,23 @@ class GoogleAuthTest extends TestCase
         $response = $this->postJson('/api/auth/google', []);
 
         $response->assertStatus(422);
+    }
+
+    public function test_unverified_email_returns_401(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'oauth2.googleapis.com/tokeninfo*' => Http::response([
+                'email'          => 'google@example.com',
+                'name'           => 'Google User',
+                'aud'            => config('services.google.client_id'),
+                'sub'            => '112233445566',
+                'email_verified' => 'false',
+            ], 200),
+        ]);
+
+        $response = $this->postJson('/api/auth/google', ['id_token' => 'fake-token']);
+
+        $response->assertStatus(401);
     }
 }

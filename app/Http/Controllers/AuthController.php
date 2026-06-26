@@ -145,6 +145,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'Token audience mismatch.'], 401);
         }
 
+        if (($payload['email_verified'] ?? '') !== 'true' && ($payload['email_verified'] ?? false) !== true) {
+            return response()->json(['message' => 'Email not verified.'], 401);
+        }
+
         $user = User::firstOrCreate(
             ['email' => $payload['email']],
             [
