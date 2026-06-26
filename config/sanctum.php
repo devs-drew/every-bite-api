@@ -50,7 +50,7 @@ return [
     |
     */
 
-    'expiration' => env('SANCTUM_TOKEN_EXPIRATION', 43200), // 30 days; null = never expire
+    'expiration' => env('SANCTUM_TOKEN_EXPIRATION') !== null ? (int) env('SANCTUM_TOKEN_EXPIRATION') : 43200, // 30 days; null = never expire
 
     /*
     |--------------------------------------------------------------------------
