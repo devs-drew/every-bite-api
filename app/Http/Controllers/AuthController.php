@@ -152,10 +152,16 @@ class AuthController extends Controller
         $user = User::firstOrCreate(
             ['email' => $payload['email']],
             [
-                'name'     => $payload['name'] ?? 'Google User',
-                'password' => bcrypt(Str::random(32)),
+                'name'              => $payload['name'] ?? 'Google User',
+                'password'          => bcrypt(Str::random(32)),
+                'email_verified_at' => now(),
             ],
         );
+
+        if (is_null($user->email_verified_at)) {
+            $user->email_verified_at = now();
+            $user->save();
+        }
 
         return response()->json([
             'token'       => $user->createToken('google')->plainTextToken,
