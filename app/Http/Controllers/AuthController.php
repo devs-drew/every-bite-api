@@ -6,7 +6,9 @@ use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -123,5 +125,38 @@ class AuthController extends Controller
         $request->user()->update($data);
 
         return $request->user()->fresh();
+    }
+
+    public function googleSignIn(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate(['id_token' => 'required|string']);
+
+        $response = Http::get('https://oauth2.googleapis.com/tokeninfo', [
+            'id_token' => $request->id_token,
+        ]);
+
+        if (!$response->ok()) {
+            return response()->json(['message' => 'Invalid Google token.'], 401);
+        }
+
+        $payload = $response->json();
+
+        if (($payload['aud'] ?? '') !== config('services.google.client_id')) {
+            return response()->json(['message' => 'Token audience mismatch.'], 401);
+        }
+
+        $user = User::firstOrCreate(
+            ['email' => $payload['email']],
+            [
+                'name'     => $payload['name'] ?? 'Google User',
+                'password' => bcrypt(Str::random(32)),
+            ],
+        );
+
+        return response()->json([
+            'token'       => $user->createToken('google')->plainTextToken,
+            'user'        => $user->fresh(),
+            'is_new_user' => $user->wasRecentlyCreated,
+        ]);
     }
 }
