@@ -23,8 +23,6 @@ class SeedProducts extends Command
 
     public function handle(): int
     {
-        ini_set('max_execution_time', 0);
-
         $maxPages = (int) $this->option('max-pages');
         $imported = 0;
         $skipped = 0;

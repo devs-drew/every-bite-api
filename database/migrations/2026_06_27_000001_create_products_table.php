@@ -22,7 +22,6 @@ return new class extends Migration
             $table->float('sugar_g')->nullable();
             $table->integer('sodium_mg')->nullable();
             $table->timestamps();
-            $table->index('product_name');
         });
     }
 

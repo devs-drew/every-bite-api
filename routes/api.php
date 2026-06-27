@@ -37,5 +37,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Product catalog search + barcode lookup
     Route::get('/products/search', [ProductController::class, 'search']);
-    Route::get('/products/barcode/{code}', [ProductController::class, 'barcode']);
+    Route::get('/products/barcode/{code}', [ProductController::class, 'barcode'])
+        ->where('code', '[0-9a-zA-Z\-]+');
 });
