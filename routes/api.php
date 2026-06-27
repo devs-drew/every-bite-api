@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CustomFoodController;
 use App\Http\Controllers\FoodLogController;
+use App\Http\Controllers\ProductController;
 use Illuminate\Support\Facades\Route;
 
 // Public auth — throttled to blunt brute-force / enumeration (5 req/min per IP).
@@ -33,4 +34,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('custom-foods', CustomFoodController::class)
         ->parameters(['custom-foods' => 'customFood'])
         ->only(['index', 'store', 'update', 'destroy']);
+
+    // Product catalog search + barcode lookup
+    Route::get('/products/search', [ProductController::class, 'search']);
+    Route::get('/products/barcode/{code}', [ProductController::class, 'barcode'])
+        ->where('code', '[0-9a-zA-Z\-]+');
 });
