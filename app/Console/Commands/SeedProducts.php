@@ -70,12 +70,15 @@ class SeedProducts extends Command
     private function fetchPage(int $page): ?array
     {
         try {
-            $res = Http::timeout(30)->get('https://ph.openfoodfacts.org/cgi/search.pl', [
-                'action' => 'process',
-                'json' => 1,
-                'page' => $page,
-                'page_size' => self::PAGE_SIZE,
-                'fields' => self::FIELDS,
+            $res = Http::timeout(30)->get('https://world.openfoodfacts.org/cgi/search.pl', [
+                'action'          => 'process',
+                'json'            => 1,
+                'page'            => $page,
+                'page_size'       => self::PAGE_SIZE,
+                'fields'          => self::FIELDS,
+                'tagtype_0'       => 'countries',
+                'tag_contains_0'  => 'contains',
+                'tag_0'           => 'en:philippines',
             ]);
 
             return $res->successful() ? $res->json() : null;
