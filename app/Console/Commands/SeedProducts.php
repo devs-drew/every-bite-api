@@ -5,16 +5,13 @@ namespace App\Console\Commands;
 use App\Http\Controllers\ProductController;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
 
 class SeedProducts extends Command
 {
-    protected $signature = 'products:seed {--max-pages=500 : Maximum pages to fetch (1000 products/page)}';
-    protected $description = 'Seed the products table from OpenFoodFacts Philippines catalog';
+    protected $signature = 'products:seed {--country=en:philippines : Country tag to filter}';
+    protected $description = 'Seed the products table from the Open Food Facts CSV bulk export';
 
-    private const FIELDS = 'code,product_name,brands,serving_quantity,nutriments';
-    private const PAGE_SIZE = 1000;
+    private const CSV_URL = 'https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz';
 
     private const UPDATE_COLS = [
         'product_name', 'brand_name', 'serving_size_g', 'calories',
@@ -23,80 +20,107 @@ class SeedProducts extends Command
 
     public function handle(): int
     {
-        $maxPages = (int) $this->option('max-pages');
-        $imported = 0;
-        $skipped = 0;
+        $country = $this->option('country');
 
-        $this->info('Fetching page 1 to determine total page count...');
-        $first = $this->fetchPage(1);
-        if (!$first) {
-            $this->error('Failed to reach ph.openfoodfacts.org. Check your connection.');
+        $this->info('Opening CSV stream (this may take a moment)...');
+        $fh = @fopen('compress.zlib://' . self::CSV_URL, 'r');
+        if (!$fh) {
+            $this->error('Failed to open CSV stream. Check your internet connection.');
             return Command::FAILURE;
         }
 
-        $totalPages = min((int) ($first['page_count'] ?? 1), $maxPages);
-        $this->info("Total pages: {$totalPages} (capped at {$maxPages})");
+        stream_set_timeout($fh, 60);
+
+        $headers = fgetcsv($fh, 0, "\t");
+        if (!$headers) {
+            fclose($fh);
+            $this->error('Failed to read CSV headers.');
+            return Command::FAILURE;
+        }
+        $col = array_flip($headers);
+
+        if (!isset($col['code'], $col['product_name'], $col['countries_tags'])) {
+            fclose($fh);
+            $this->error('Unexpected CSV format — required columns missing.');
+            return Command::FAILURE;
+        }
 
         $batch = [];
-        $this->processPage($first['products'] ?? [], $batch, $imported, $skipped);
+        $imported = 0;
+        $skipped = 0;
+        $processed = 0;
 
-        for ($page = 2; $page <= $totalPages; $page++) {
-            $data = $this->fetchPage($page);
-            if (!$data) {
-                $this->warn("Page {$page} failed — skipping.");
+        while (($row = fgetcsv($fh, 0, "\t")) !== false) {
+            $processed++;
+
+            $countries = $row[$col['countries_tags']] ?? '';
+            if (!str_contains($countries, $country)) {
                 continue;
             }
 
-            $this->processPage($data['products'] ?? [], $batch, $imported, $skipped);
+            $record = $this->csvRowToRecord($row, $col);
+            if (!$record) {
+                $skipped++;
+                continue;
+            }
+
+            $batch[] = $record;
+            $imported++;
 
             if (count($batch) >= 500) {
                 DB::table('products')->upsert($batch, ['code'], self::UPDATE_COLS);
                 $batch = [];
             }
 
-            if ($page % 10 === 0) {
-                $this->info("Page {$page}/{$totalPages} — {$imported} imported, {$skipped} skipped");
+            if ($imported % 500 === 0) {
+                $this->info("{$imported} imported, {$skipped} skipped ({$processed} rows scanned)");
             }
         }
+
+        fclose($fh);
 
         if ($batch) {
             DB::table('products')->upsert($batch, ['code'], self::UPDATE_COLS);
         }
 
-        $this->info("Done. {$imported} products imported, {$skipped} skipped (missing name/code).");
+        $this->info("Done. {$imported} imported, {$skipped} skipped from {$processed} rows scanned.");
         return Command::SUCCESS;
     }
 
-    private function fetchPage(int $page): ?array
+    private function csvRowToRecord(array $row, array $col): ?array
     {
-        try {
-            $res = Http::timeout(30)->get('https://world.openfoodfacts.org/cgi/search.pl', [
-                'action'          => 'process',
-                'json'            => 1,
-                'page'            => $page,
-                'page_size'       => self::PAGE_SIZE,
-                'fields'          => self::FIELDS,
-                'tagtype_0'       => 'countries',
-                'tag_contains_0'  => 'contains',
-                'tag_0'           => 'en:philippines',
-            ]);
+        $code = trim($row[$col['code']] ?? '');
+        $name = trim($row[$col['product_name']] ?? '');
+        if (!$code || !$name) return null;
 
-            return $res->successful() ? $res->json() : null;
-        } catch (ConnectionException) {
-            return null;
-        }
-    }
+        $get = fn(string $field): string => $row[$col[$field] ?? -1] ?? '';
 
-    private function processPage(array $products, array &$batch, int &$imported, int &$skipped): void
-    {
-        foreach ($products as $p) {
-            $row = ProductController::offToRow($p);
-            if (!$row) {
-                $skipped++;
-                continue;
-            }
-            $batch[] = $row;
-            $imported++;
+        $kcal = $get('energy-kcal_100g');
+        if ($kcal === '' && ($kj = $get('energy-kj_100g')) !== '') {
+            $kcal = (string) ((float) $kj / 4.184);
         }
+
+        // serving_size in CSV is a string like "100 g" or "1 serving (28 g)"
+        preg_match('/(\d+(?:\.\d+)?)\s*g\b/i', $get('serving_size'), $m);
+        $servingG = isset($m[1]) ? (float) $m[1] : null;
+
+        $brand = trim(explode(',', $get('brands'))[0]) ?: null;
+        $num = fn(string $field): ?float => ($v = $get($field)) !== '' ? (float) $v : null;
+
+        return [
+            'code'           => $code,
+            'product_name'   => $name,
+            'brand_name'     => $brand,
+            'serving_size_g' => $servingG,
+            'calories'       => $kcal !== '' ? (int) round((float) $kcal) : null,
+            'protein_g'      => ($v = $num('proteins_100g'))      !== null ? round($v, 1)        : null,
+            'carbs_g'        => ($v = $num('carbohydrates_100g')) !== null ? round($v, 1)        : null,
+            'fat_g'          => ($v = $num('fat_100g'))           !== null ? round($v, 1)        : null,
+            'fiber_g'        => ($v = $num('fiber_100g'))         !== null ? round($v, 1)        : null,
+            'sugar_g'        => ($v = $num('sugars_100g'))        !== null ? round($v, 1)        : null,
+            'sodium_mg'      => ($v = $num('sodium_100g'))        !== null ? (int) round($v * 1000) : null,
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ];
     }
 }
