@@ -49,12 +49,14 @@ class ProductController extends Controller
         }
 
         // OFF fallback — cache result for future lookups
-        $offRes = Http::timeout(10)->get(
-            "https://world.openfoodfacts.org/api/v2/product/{$code}.json",
-            ['fields' => 'code,product_name,brands,serving_quantity,nutriments']
-        );
+        $offRes = Http::timeout(10)
+            ->withHeaders(['User-Agent' => 'EveryBite/1.0 (andrewferrer80@gmail.com)'])
+            ->get(
+                "https://world.openfoodfacts.org/api/v3/product/{$code}.json",
+                ['fields' => 'code,product_name,brands,serving_quantity,nutriments']
+            );
 
-        if (!$offRes->successful() || $offRes->json('status') !== 1) {
+        if (!$offRes->successful() || $offRes->json('result.id') !== 'product_found') {
             return response()->json(null, 404);
         }
 
